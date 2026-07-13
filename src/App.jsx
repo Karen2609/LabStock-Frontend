@@ -5,6 +5,7 @@ import axios from "axios"
 import "./App.css"
 import InsumoItem from "./components/InsumoItem"
 import Login from "./components/Login"
+import Auditoria from "./components/Auditoria"
 import { exportarInsumosAExcel } from "./utils/excelExport"
 
 // Formulario para agregar insumos
@@ -58,6 +59,7 @@ function InsumoForm({ agregarInsumo }) {
         placeholder="Nombre del insumo"
         value={nombre}
         onChange={(e) => setNombre(e.target.value)}
+        required
       />
 
       <input
@@ -66,15 +68,20 @@ function InsumoForm({ agregarInsumo }) {
         value={cantidad}
         onChange={(e) => setCantidad(e.target.value)}
         min="0"
+        required
       />
 
-      <select value={tipo} onChange={(e) => setTipo(e.target.value)}>
+      <select
+        value={tipo}
+        onChange={(e) => setTipo(e.target.value)}
+      >
         <option value="Reactivo">Reactivo</option>
         <option value="Equipo">Equipo</option>
         <option value="Material">Material</option>
       </select>
 
       <label>Fecha de ingreso</label>
+
       <input
         type="date"
         value={fechaIngreso}
@@ -82,6 +89,7 @@ function InsumoForm({ agregarInsumo }) {
       />
 
       <label>Fecha de vencimiento</label>
+
       <input
         type="date"
         value={fechaVencimiento}
@@ -100,17 +108,24 @@ function InsumoForm({ agregarInsumo }) {
         onChange={(e) => setProveedor(e.target.value)}
       />
 
-      <button type="submit">Agregar</button>
+      <button type="submit">
+        Agregar
+      </button>
     </form>
   )
 }
 
+// Componente principal
 function App() {
   const [usuario, setUsuario] = useState(() => {
     try {
       const usuarioGuardado = localStorage.getItem("usuarioLabStock")
-      return usuarioGuardado ? JSON.parse(usuarioGuardado) : null
-    } catch {
+
+      return usuarioGuardado
+        ? JSON.parse(usuarioGuardado)
+        : null
+    } catch (error) {
+      console.error("Error al leer la sesión:", error)
       return null
     }
   })
@@ -118,6 +133,7 @@ function App() {
   const [insumos, setInsumos] = useState([])
   const [busqueda, setBusqueda] = useState("")
   const [cargandoInsumos, setCargandoInsumos] = useState(false)
+  const [vista, setVista] = useState("inventario")
 
   const puedeModificar =
     usuario?.rol === "administrador" ||
@@ -148,6 +164,7 @@ function App() {
 
   const iniciarSesion = (usuarioAutenticado) => {
     setUsuario(usuarioAutenticado)
+    setVista("inventario")
   }
 
   const cerrarSesion = () => {
@@ -155,11 +172,16 @@ function App() {
     setUsuario(null)
     setInsumos([])
     setBusqueda("")
+    setVista("inventario")
   }
 
   const agregarInsumo = async (nuevo) => {
     try {
-      const respuesta = await axios.post("/api/insumos", nuevo)
+      const respuesta = await axios.post("/api/insumos", {
+        ...nuevo,
+        usuarioNombre: usuario.nombre,
+        usuarioRol: usuario.rol
+      })
 
       setInsumos((insumosActuales) => [
         ...insumosActuales,
@@ -178,7 +200,11 @@ function App() {
     try {
       const respuesta = await axios.put(
         `/api/insumos/${actualizado.id}`,
-        actualizado
+        {
+          ...actualizado,
+          usuarioNombre: usuario.nombre,
+          usuarioRol: usuario.rol
+        }
       )
 
       setInsumos((insumosActuales) =>
@@ -196,41 +222,86 @@ function App() {
 
   const eliminarInsumo = async (id) => {
     try {
-      await axios.delete(`/api/insumos/${id}`)
+      await axios.delete(`/api/insumos/${id}`, {
+        data: {
+          usuarioNombre: usuario.nombre,
+          usuarioRol: usuario.rol
+        }
+      })
 
       setInsumos((insumosActuales) =>
-        insumosActuales.filter((insumo) => insumo.id !== id)
+        insumosActuales.filter(
+          (insumo) => insumo.id !== id
+        )
       )
     } catch (error) {
-      console.error("Error al eliminar:", error)
+      console.error("Error al eliminar el insumo:", error)
       alert("No se pudo eliminar el insumo")
     }
   }
 
   const insumosFiltrados = insumos.filter((insumo) =>
-    insumo.nombre.toLowerCase().includes(busqueda.toLowerCase())
+    insumo.nombre
+      .toLowerCase()
+      .includes(busqueda.toLowerCase())
   )
+
+  const exportarExcel = () => {
+    exportarInsumosAExcel(insumosFiltrados)
+  }
 
   if (!usuario) {
     return <Login onLogin={iniciarSesion} />
+  }
+
+  if (
+    usuario.rol === "administrador" &&
+    vista === "auditoria"
+  ) {
+    return (
+      <Auditoria
+        onVolver={() => setVista("inventario")}
+      />
+    )
   }
 
   return (
     <div className="container">
       <div className="cabecera-usuario">
         <div>
-          <h1>📦 LabStock - Inventario de Laboratorio</h1>
+          <h1>
+            📦 LabStock - Inventario de Laboratorio
+          </h1>
+
           <p>
             👤 <strong>{usuario.nombre}</strong>
           </p>
+
           <p>
-            Rol: <strong>{usuario.rol.replaceAll("_", " ")}</strong>
+            Rol:{" "}
+            <strong>
+              {usuario.rol.replaceAll("_", " ")}
+            </strong>
           </p>
         </div>
 
-        <button type="button" onClick={cerrarSesion}>
-          🚪 Cerrar sesión
-        </button>
+        <div className="acciones-usuario">
+          {usuario.rol === "administrador" && (
+            <button
+              type="button"
+              onClick={() => setVista("auditoria")}
+            >
+              📋 Ver auditoría
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={cerrarSesion}
+          >
+            🚪 Cerrar sesión
+          </button>
+        </div>
       </div>
 
       <input
@@ -242,14 +313,16 @@ function App() {
       />
 
       {puedeModificar && (
-        <InsumoForm agregarInsumo={agregarInsumo} />
+        <InsumoForm
+          agregarInsumo={agregarInsumo}
+        />
       )}
 
       <h2>Listado de Insumos</h2>
 
       <button
         type="button"
-        onClick={() => exportarInsumosAExcel(insumosFiltrados)}
+        onClick={exportarExcel}
       >
         📤 Exportar a Excel
       </button>
@@ -263,8 +336,16 @@ function App() {
           <InsumoItem
             key={insumo.id}
             insumo={insumo}
-            actualizar={puedeModificar ? actualizarInsumo : null}
-            eliminar={puedeModificar ? eliminarInsumo : null}
+            actualizar={
+              puedeModificar
+                ? actualizarInsumo
+                : null
+            }
+            eliminar={
+              puedeModificar
+                ? eliminarInsumo
+                : null
+            }
             soloLectura={!puedeModificar}
           />
         ))
